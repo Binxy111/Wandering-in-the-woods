@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Wandering in the Woods - Story Mode</title>
+<title>Wandering in the Woods - Story Mode Fixed</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   canvas{ display:block; }
@@ -43,9 +43,11 @@ let gamepadIndex = null;
 let storyEl = document.getElementById("story");
 
 // Story variables
-let storyState = 0; // 0=start, 1=found journal, 2=found clues, 3=final ritual
+let storyState = 0; // 0=start, 1=found journal, 2-4 clues, 5=win, 6=lose
 let cluesFound = 0;
-let storyText = [
+let gameStarted = false;
+
+const storyText = [
     "You awaken in the forest. The trees loom above you. Find the journal to understand what happened...",
     "You found the journal. Whispers speak of a dark ritual. Find 3 clues to unlock the forest's secret...",
     "Clues collected: 1 of 3",
@@ -102,6 +104,8 @@ function init(){
     instructions.addEventListener('click', ()=>{
         controls.lock();
         instructions.style.display='none';
+        gameStarted = true;
+        storyState = 0;
         storyEl.innerText = storyText[storyState];
     });
 
@@ -136,13 +140,11 @@ function createTree(){
 
 // Controller
 function handleController(){
-    if(gamepadIndex!==null){
+    if(gameStarted && gamepadIndex!==null){
         const gp = navigator.getGamepads()[gamepadIndex];
         if(gp){
-            // Movement
             controls.moveRight(gp.axes[0]*0.6);
             controls.moveForward(gp.axes[1]*0.6);
-            // Looking
             camera.rotation.y -= gp.axes[2]*0.03;
             camera.rotation.x -= gp.axes[3]*0.03;
             camera.rotation.x = Math.max(-Math.PI/2,Math.min(Math.PI/2,camera.rotation.x));
@@ -154,6 +156,7 @@ handleController();
 
 // Monster AI
 function updateMonster(delta){
+    if(!gameStarted) return;
     const dir = new THREE.Vector3();
     dir.subVectors(camera.position, monster.position).normalize();
     monster.position.add(dir.multiplyScalar(0.5*delta));
@@ -161,19 +164,24 @@ function updateMonster(delta){
 
 // Story interaction
 function checkStory(){
+    if(!gameStarted) return;
+
     // Random clues
-    if(Math.random()<0.005 && cluesFound<3){
+    if(cluesFound<3 && Math.random()<0.003){
         cluesFound++;
         storyState = 1 + cluesFound;
         storyEl.innerText = storyText[storyState];
     }
-    // Check win/lose
+
+    // Check win
     if(cluesFound>=3 && camera.position.distanceTo(monster.position)<5){
-        storyState = 5; // ritual complete
+        storyState = 5; // win
         storyEl.innerText = storyText[storyState];
     }
+
+    // Check lose
     if(camera.position.distanceTo(monster.position)<2 && storyState!=5){
-        storyState = 6; // monster catches
+        storyState = 6; // lose
         storyEl.innerText = storyText[storyState];
         setTimeout(()=>location.reload(),3000);
     }
