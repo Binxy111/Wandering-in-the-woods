@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Wandering in the Woods - Story Mode Fixed</title>
+<title>Wandering in the Woods - Story Fixed</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   canvas{ display:block; }
@@ -47,7 +47,6 @@ let storyState = 0; // 0=start, 1=journal, 2-4 clues, 5=win, 6=lose
 let cluesFound = 0;
 let gameStarted = false;
 
-// Story text
 const storyText = [
     "You awaken in the forest. The trees loom above you. Find the journal to understand what happened...",
     "You found the journal. Whispers speak of a dark ritual. Find 3 clues to unlock the forest's secret...",
@@ -108,6 +107,7 @@ function init(){
         gameStarted = true;
         storyState = 0;
         storyEl.innerText = storyText[storyState];
+        startStoryProgress();
     });
 
     // Gamepad
@@ -163,16 +163,20 @@ function updateMonster(delta){
     monster.position.add(dir.multiplyScalar(0.5*delta));
 }
 
-// Story interaction: clues appear as player moves
+// Story progression: automatically progress clues for demo
+function startStoryProgress(){
+    if(cluesFound >= 3) return;
+    setTimeout(()=>{
+        cluesFound++;
+        if(cluesFound === 1) storyState = 1; // journal found
+        else storyState = 1 + cluesFound;
+        storyEl.innerText = storyText[storyState];
+        startStoryProgress();
+    }, 5000); // every 5 seconds, next clue
+}
+
 function checkStory(){
     if(!gameStarted) return;
-
-    // Add clues if player moves sufficiently
-    if(cluesFound<3 && camera.position.distanceTo(new THREE.Vector3(0,0,0))>cluesFound*30){
-        cluesFound++;
-        storyState = 1 + cluesFound;
-        storyEl.innerText = storyText[storyState];
-    }
 
     // Win: after collecting 3 clues, reach monster vicinity
     if(cluesFound>=3 && camera.position.distanceTo(monster.position)<5){
