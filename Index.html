@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wandering in the Woods - Story Mode</title>
+<style>
+  body { margin:0; overflow:hidden; background:black; }
+  canvas{ display:block; }
+  #story {
+    position:absolute;
+    bottom:10%;
+    width:100%;
+    text-align:center;
+    color:white;
+    font-size:24px;
+    font-family:sans-serif;
+    text-shadow: 1px 1px 5px black;
+    pointer-events:none;
+  }
+  #instructions {
+    position:absolute;
+    top:50%;
+    width:100%;
+    text-align:center;
+    color:white;
+    font-size:24px;
+    user-select:none;
+  }
+</style>
+</head>
+<body>
+<div id="instructions">Click to start wandering in the woods</div>
+<div id="story"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/PointerLockControls.js"></script>
+
+<script>
+let camera, scene, renderer, controls;
+let trees=[], monster;
+let clock = new THREE.Clock();
+let gamepadIndex = null;
+let storyEl = document.getElementById("story");
+
+// Story variables
+let storyState = 0; // 0=start, 1=found journal, 2=found clues, 3=final ritual
+let cluesFound = 0;
+let storyText = [
+    "You awaken in the forest. The trees loom above you. Find the journal to understand what happened...",
+    "You found the journal. Whispers speak of a dark ritual. Find 3 clues to unlock the forest's secret...",
+    "Clues collected: 1 of 3",
+    "Clues collected: 2 of 3",
+    "Clues collected: 3 of 3. Proceed to the clearing to perform the ritual...",
+    "You performed the ritual. The forest fades. You are free...",
+    "The monster catches you. Darkness consumes you..."
+];
+
+init();
+animate();
+
+function init(){
+    scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.07);
+
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
+
+    renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Lighting
+    const moonLight = new THREE.DirectionalLight(0xaaaaee, 0.2);
+    moonLight.position.set(50,50,50);
+    scene.add(moonLight);
+    scene.add(new THREE.AmbientLight(0x111111));
+
+    // Floor
+    const floorGeo = new THREE.PlaneGeometry(1000,1000);
+    const floorMat = new THREE.MeshPhongMaterial({color:0x0a0a0a});
+    const floor = new THREE.Mesh(floorGeo,floorMat);
+    floor.rotation.x = -Math.PI/2;
+    scene.add(floor);
+
+    // Trees
+    for(let i=0;i<200;i++){
+        const t = createTree();
+        t.position.set(Math.random()*800-400,0,Math.random()*800-400);
+        scene.add(t);
+        trees.push(t);
+    }
+
+    // Monster
+    const monsterGeo = new THREE.BoxGeometry(1.5,3,1.5);
+    const monsterMat = new THREE.MeshBasicMaterial({color:0xff0000});
+    monster = new THREE.Mesh(monsterGeo, monsterMat);
+    monster.position.set(20,1.5,20);
+    scene.add(monster);
+
+    // Controls
+    controls = new THREE.PointerLockControls(camera, document.body);
+    const instructions = document.getElementById('instructions');
+    instructions.addEventListener('click', ()=>{
+        controls.lock();
+        instructions.style.display='none';
+        storyEl.innerText = storyText[storyState];
+    });
+
+    // Gamepad
+    window.addEventListener("gamepadconnected", (e)=>{
+        console.log("Gamepad connected:", e.gamepad);
+        gamepadIndex = e.gamepad.index;
+    });
+
+    window.addEventListener('resize', ()=>{
+        camera.aspect = window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+}
+
+function createTree(){
+    const trunkGeo = new THREE.CylinderGeometry(0.3,0.3,5);
+    const trunkMat = new THREE.MeshPhongMaterial({color:0x332211});
+    const trunk = new THREE.Mesh(trunkGeo,trunkMat);
+
+    const leavesGeo = new THREE.ConeGeometry(2,6,8);
+    const leavesMat = new THREE.MeshPhongMaterial({color:0x0a0a0a});
+    const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+    leaves.position.y = 5;
+
+    const tree = new THREE.Group();
+    tree.add(trunk);
+    tree.add(leaves);
+    return tree;
+}
+
+// Controller
+function handleController(){
+    if(gamepadIndex!==null){
+        const gp = navigator.getGamepads()[gamepadIndex];
+        if(gp){
+            // Movement
+            controls.moveRight(gp.axes[0]*0.6);
+            controls.moveForward(gp.axes[1]*0.6);
+            // Looking
+            camera.rotation.y -= gp.axes[2]*0.03;
+            camera.rotation.x -= gp.axes[3]*0.03;
+            camera.rotation.x = Math.max(-Math.PI/2,Math.min(Math.PI/2,camera.rotation.x));
+        }
+    }
+    requestAnimationFrame(handleController);
+}
+handleController();
+
+// Monster AI
+function updateMonster(delta){
+    const dir = new THREE.Vector3();
+    dir.subVectors(camera.position, monster.position).normalize();
+    monster.position.add(dir.multiplyScalar(0.5*delta));
+}
+
+// Story interaction
+function checkStory(){
+    // Random clues
+    if(Math.random()<0.005 && cluesFound<3){
+        cluesFound++;
+        storyState = 1 + cluesFound;
+        storyEl.innerText = storyText[storyState];
+    }
+    // Check win/lose
+    if(cluesFound>=3 && camera.position.distanceTo(monster.position)<5){
+        storyState = 5; // ritual complete
+        storyEl.innerText = storyText[storyState];
+    }
+    if(camera.position.distanceTo(monster.position)<2 && storyState!=5){
+        storyState = 6; // monster catches
+        storyEl.innerText = storyText[storyState];
+        setTimeout(()=>location.reload(),3000);
+    }
+}
+
+function animate(){
+    requestAnimationFrame(animate);
+    const delta = clock.getDelta();
+    updateMonster(delta);
+    checkStory();
+    renderer.render(scene,camera);
+}
+</script>
+</body>
+</html>
