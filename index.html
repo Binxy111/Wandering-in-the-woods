@@ -3,105 +3,95 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Switch Puzzle Game</title>
+<title>3D Face Shooter</title>
 <style>
-  body, html { margin: 0; padding: 0; overflow: hidden; background: #111; }
-  canvas { display: block; background: #222; }
+  body, html { margin: 0; padding: 0; overflow: hidden; background: #222; }
+  #score { position: absolute; top: 10px; left: 10px; font-size: 24px; color: white; z-index: 1; }
 </style>
 </head>
 <body>
-<canvas id="gameCanvas"></canvas>
+<div id="score">Score: 0</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r155/three.min.js"></script>
 <script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+let scene, camera, renderer;
+let faces = [];
+let score = 0;
 
-const ball = { x: 50, y: 50, r: 20, color: 'lime', vx: 0, vy: 0 };
-const target = { x: canvas.width - 100, y: canvas.height - 100, r: 25, color: 'gold' };
+// Setup scene
+scene = new THREE.Scene();
+camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.z = 5;
 
-// Walls (x, y, width, height)
-const walls = [
-  {x: 200, y: 0, w: 20, h: 300},
-  {x: 400, y: 200, w: 20, h: 300},
-  {x: 600, y: 0, w: 20, h: 400},
-];
+renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
-const sensitivity = 0.2;
+// Light
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(5,10,7.5);
+scene.add(light);
 
-// Accelerometer control
-window.addEventListener('deviceorientation', e => {
-  ball.vx = e.gamma * sensitivity;
-  ball.vy = e.beta * sensitivity;
+// Create faces as spheres
+function spawnFace() {
+    const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+    const material = new THREE.MeshStandardMaterial({color: 0xffff00});
+    const face = new THREE.Mesh(geometry, material);
+    face.position.set((Math.random()-0.5)*10, (Math.random()-0.5)*5, -Math.random()*10 - 5);
+    scene.add(face);
+    faces.push(face);
+}
+for(let i=0;i<5;i++) spawnFace();
+
+// Crosshair
+const crosshair = document.createElement('div');
+crosshair.style.position = 'absolute';
+crosshair.style.top = '50%';
+crosshair.style.left = '50%';
+crosshair.style.width = '20px';
+crosshair.style.height = '20px';
+crosshair.style.marginLeft = '-10px';
+crosshair.style.marginTop = '-10px';
+crosshair.style.border = '2px solid red';
+crosshair.style.borderRadius = '50%';
+document.body.appendChild(crosshair);
+
+// Handle shooting
+window.addEventListener('click', () => {
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(0,0), camera); // center of screen
+    const intersects = raycaster.intersectObjects(faces);
+    if(intersects.length > 0) {
+        const face = intersects[0].object;
+        scene.remove(face);
+        faces = faces.filter(f => f !== face);
+        score++;
+        document.getElementById('score').textContent = 'Score: ' + score;
+        spawnFace();
+    }
 });
 
-function rectsIntersect(r1, r2) {
-  return !(r2.x > r1.x + r1.w || 
-           r2.x + r2.w < r1.x || 
-           r2.y > r1.y + r1.h ||
-           r2.y + r2.h < r1.y);
+// Device orientation control
+let rotX = 0, rotY = 0;
+window.addEventListener('deviceorientation', (e) => {
+    rotY = THREE.MathUtils.degToRad(e.gamma || 0); // left/right
+    rotX = THREE.MathUtils.degToRad(e.beta || 0);  // up/down
+});
+
+// Animate
+function animate() {
+    requestAnimationFrame(animate);
+    camera.rotation.x = rotX;
+    camera.rotation.y = rotY;
+
+    renderer.render(scene, camera);
 }
+animate();
 
-function update() {
-  ball.x += ball.vx;
-  ball.y += ball.vy;
-
-  // Boundaries
-  if(ball.x < ball.r) ball.x = ball.r;
-  if(ball.x > canvas.width - ball.r) ball.x = canvas.width - ball.r;
-  if(ball.y < ball.r) ball.y = ball.r;
-  if(ball.y > canvas.height - ball.r) ball.y = canvas.height - ball.r;
-
-  // Collision with walls
-  walls.forEach(w => {
-    if(ball.x + ball.r > w.x && ball.x - ball.r < w.x + w.w &&
-       ball.y + ball.r > w.y && ball.y - ball.r < w.y + w.h) {
-      // Simple collision: stop movement
-      ball.x -= ball.vx;
-      ball.y -= ball.vy;
-      ball.vx = 0;
-      ball.vy = 0;
-    }
-  });
-
-  // Check win
-  const dx = ball.x - target.x;
-  const dy = ball.y - target.y;
-  if(Math.sqrt(dx*dx + dy*dy) < ball.r + target.r){
-    alert("You reached the target!");
-    // Reset
-    ball.x = 50;
-    ball.y = 50;
-  }
-}
-
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  // Draw walls
-  ctx.fillStyle = 'red';
-  walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
-
-  // Draw target
-  ctx.beginPath();
-  ctx.arc(target.x, target.y, target.r, 0, Math.PI*2);
-  ctx.fillStyle = target.color;
-  ctx.fill();
-
-  // Draw ball
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
-  ctx.fillStyle = ball.color;
-  ctx.fill();
-}
-
-function loop() {
-  update();
-  draw();
-  requestAnimationFrame(loop);
-}
-
-loop();
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>
