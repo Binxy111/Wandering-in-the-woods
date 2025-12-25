@@ -2,203 +2,106 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Wandering in the Woods - Story Fixed</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Switch Puzzle Game</title>
 <style>
-  body { margin:0; overflow:hidden; background:black; }
-  canvas{ display:block; }
-  #story {
-    position:absolute;
-    bottom:10%;
-    width:100%;
-    text-align:center;
-    color:white;
-    font-size:24px;
-    font-family:sans-serif;
-    text-shadow: 1px 1px 5px black;
-    pointer-events:none;
-  }
-  #instructions {
-    position:absolute;
-    top:50%;
-    width:100%;
-    text-align:center;
-    color:white;
-    font-size:24px;
-    user-select:none;
-  }
+  body, html { margin: 0; padding: 0; overflow: hidden; background: #111; }
+  canvas { display: block; background: #222; }
 </style>
 </head>
 <body>
-<div id="instructions">Click to start wandering in the woods</div>
-<div id="story"></div>
-
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/PointerLockControls.js"></script>
-
+<canvas id="gameCanvas"></canvas>
 <script>
-let camera, scene, renderer, controls;
-let trees=[], monster;
-let clock = new THREE.Clock();
-let gamepadIndex = null;
-let storyEl = document.getElementById("story");
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-// Story variables
-let storyState = 0; // 0=start, 1=journal, 2-4 clues, 5=win, 6=lose
-let cluesFound = 0;
-let gameStarted = false;
+const ball = { x: 50, y: 50, r: 20, color: 'lime', vx: 0, vy: 0 };
+const target = { x: canvas.width - 100, y: canvas.height - 100, r: 25, color: 'gold' };
 
-const storyText = [
-    "You awaken in the forest. The trees loom above you. Find the journal to understand what happened...",
-    "You found the journal. Whispers speak of a dark ritual. Find 3 clues to unlock the forest's secret...",
-    "Clues collected: 1 of 3",
-    "Clues collected: 2 of 3",
-    "Clues collected: 3 of 3. Proceed to the clearing to perform the ritual...",
-    "You performed the ritual. The forest fades. You are free...",
-    "The monster catches you. Darkness consumes you..."
+// Walls (x, y, width, height)
+const walls = [
+  {x: 200, y: 0, w: 20, h: 300},
+  {x: 400, y: 200, w: 20, h: 300},
+  {x: 600, y: 0, w: 20, h: 400},
 ];
 
-init();
-animate();
+const sensitivity = 0.2;
 
-function init(){
-    scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000000, 0.07);
+// Accelerometer control
+window.addEventListener('deviceorientation', e => {
+  ball.vx = e.gamma * sensitivity;
+  ball.vy = e.beta * sensitivity;
+});
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
+function rectsIntersect(r1, r2) {
+  return !(r2.x > r1.x + r1.w || 
+           r2.x + r2.w < r1.x || 
+           r2.y > r1.y + r1.h ||
+           r2.y + r2.h < r1.y);
+}
 
-    renderer = new THREE.WebGLRenderer({antialias:true});
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+function update() {
+  ball.x += ball.vx;
+  ball.y += ball.vy;
 
-    // Lights
-    const moonLight = new THREE.DirectionalLight(0xaaaaee, 0.2);
-    moonLight.position.set(50,50,50);
-    scene.add(moonLight);
-    scene.add(new THREE.AmbientLight(0x111111));
+  // Boundaries
+  if(ball.x < ball.r) ball.x = ball.r;
+  if(ball.x > canvas.width - ball.r) ball.x = canvas.width - ball.r;
+  if(ball.y < ball.r) ball.y = ball.r;
+  if(ball.y > canvas.height - ball.r) ball.y = canvas.height - ball.r;
 
-    // Floor
-    const floorGeo = new THREE.PlaneGeometry(1000,1000);
-    const floorMat = new THREE.MeshPhongMaterial({color:0x0a0a0a});
-    const floor = new THREE.Mesh(floorGeo,floorMat);
-    floor.rotation.x = -Math.PI/2;
-    scene.add(floor);
-
-    // Trees
-    for(let i=0;i<200;i++){
-        const t = createTree();
-        t.position.set(Math.random()*800-400,0,Math.random()*800-400);
-        scene.add(t);
-        trees.push(t);
+  // Collision with walls
+  walls.forEach(w => {
+    if(ball.x + ball.r > w.x && ball.x - ball.r < w.x + w.w &&
+       ball.y + ball.r > w.y && ball.y - ball.r < w.y + w.h) {
+      // Simple collision: stop movement
+      ball.x -= ball.vx;
+      ball.y -= ball.vy;
+      ball.vx = 0;
+      ball.vy = 0;
     }
+  });
 
-    // Monster
-    const monsterGeo = new THREE.BoxGeometry(1.5,3,1.5);
-    const monsterMat = new THREE.MeshBasicMaterial({color:0xff0000});
-    monster = new THREE.Mesh(monsterGeo, monsterMat);
-    monster.position.set(20,1.5,20);
-    scene.add(monster);
-
-    // Controls
-    controls = new THREE.PointerLockControls(camera, document.body);
-    const instructions = document.getElementById('instructions');
-    instructions.addEventListener('click', ()=>{
-        controls.lock();
-        instructions.style.display='none';
-        gameStarted = true;
-        storyState = 0;
-        storyEl.innerText = storyText[storyState];
-        startStoryProgress();
-    });
-
-    // Gamepad
-    window.addEventListener("gamepadconnected", (e)=>{
-        console.log("Gamepad connected:", e.gamepad);
-        gamepadIndex = e.gamepad.index;
-    });
-
-    window.addEventListener('resize', ()=>{
-        camera.aspect = window.innerWidth/window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+  // Check win
+  const dx = ball.x - target.x;
+  const dy = ball.y - target.y;
+  if(Math.sqrt(dx*dx + dy*dy) < ball.r + target.r){
+    alert("You reached the target!");
+    // Reset
+    ball.x = 50;
+    ball.y = 50;
+  }
 }
 
-function createTree(){
-    const trunkGeo = new THREE.CylinderGeometry(0.3,0.3,5);
-    const trunkMat = new THREE.MeshPhongMaterial({color:0x332211});
-    const trunk = new THREE.Mesh(trunkGeo,trunkMat);
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw walls
+  ctx.fillStyle = 'red';
+  walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
 
-    const leavesGeo = new THREE.ConeGeometry(2,6,8);
-    const leavesMat = new THREE.MeshPhongMaterial({color:0x0a0a0a});
-    const leaves = new THREE.Mesh(leavesGeo, leavesMat);
-    leaves.position.y = 5;
+  // Draw target
+  ctx.beginPath();
+  ctx.arc(target.x, target.y, target.r, 0, Math.PI*2);
+  ctx.fillStyle = target.color;
+  ctx.fill();
 
-    const tree = new THREE.Group();
-    tree.add(trunk);
-    tree.add(leaves);
-    return tree;
+  // Draw ball
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+  ctx.fillStyle = ball.color;
+  ctx.fill();
 }
 
-// Controller
-function handleController(){
-    if(gameStarted && gamepadIndex!==null){
-        const gp = navigator.getGamepads()[gamepadIndex];
-        if(gp){
-            controls.moveRight(gp.axes[0]*0.6);
-            controls.moveForward(gp.axes[1]*0.6);
-            camera.rotation.y -= gp.axes[2]*0.03;
-            camera.rotation.x -= gp.axes[3]*0.03;
-            camera.rotation.x = Math.max(-Math.PI/2,Math.min(Math.PI/2,camera.rotation.x));
-        }
-    }
-    requestAnimationFrame(handleController);
-}
-handleController();
-
-// Monster AI
-function updateMonster(delta){
-    if(!gameStarted) return;
-    const dir = new THREE.Vector3();
-    dir.subVectors(camera.position, monster.position).normalize();
-    monster.position.add(dir.multiplyScalar(0.5*delta));
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
 }
 
-// Story progression: automatically progress clues for demo
-function startStoryProgress(){
-    if(cluesFound >= 3) return;
-    setTimeout(()=>{
-        cluesFound++;
-        if(cluesFound === 1) storyState = 1; // journal found
-        else storyState = 1 + cluesFound;
-        storyEl.innerText = storyText[storyState];
-        startStoryProgress();
-    }, 5000); // every 5 seconds, next clue
-}
-
-function checkStory(){
-    if(!gameStarted) return;
-
-    // Win: after collecting 3 clues, reach monster vicinity
-    if(cluesFound>=3 && camera.position.distanceTo(monster.position)<5){
-        storyState = 5; // win
-        storyEl.innerText = storyText[storyState];
-    }
-
-    // Lose: monster too close
-    if(camera.position.distanceTo(monster.position)<2 && storyState!=5){
-        storyState = 6; // lose
-        storyEl.innerText = storyText[storyState];
-        setTimeout(()=>location.reload(),3000);
-    }
-}
-
-function animate(){
-    requestAnimationFrame(animate);
-    const delta = clock.getDelta();
-    updateMonster(delta);
-    checkStory();
-    renderer.render(scene,camera);
-}
+loop();
 </script>
 </body>
 </html>
